@@ -1,6 +1,7 @@
 import SwiftUI
 
 struct SuccessView: View {
+    let isLastLevel: Bool
     let onNext: () -> Void
 
     var body: some View {
@@ -16,18 +17,18 @@ struct SuccessView: View {
             }
 
             VStack(spacing: 8) {
-                Text("Mission Complete")
+                Text(isLastLevel ? "Session Complete!" : "Nice work!")
                     .font(.title2)
                     .fontWeight(.bold)
                     .foregroundColor(.primary.opacity(0.85))
 
-                Text("Great focus!")
+                Text(isLastLevel ? "You did great!" : "Keep it up!")
                     .font(.body)
                     .foregroundColor(.secondary)
             }
 
             Button(action: onNext) {
-                Text("Next")
+                Text(isLastLevel ? "Start Over" : "Next")
                     .font(.headline)
                     .foregroundColor(.white)
                     .frame(width: 160, height: 50)

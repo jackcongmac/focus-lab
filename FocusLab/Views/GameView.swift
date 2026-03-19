@@ -2,6 +2,7 @@ import SwiftUI
 
 struct GameView: View {
     @StateObject private var vm = GameViewModel()
+    @State private var successToastVisible = false
 
     private let columns = [
         GridItem(.flexible(), spacing: 16),
@@ -19,7 +20,20 @@ struct GameView: View {
                     .foregroundColor(Color.indigo.opacity(0.85))
                     .frame(maxWidth: .infinity)
                     .padding(.top, 52)
-                    .padding(.bottom, 36)
+                    .padding(.bottom, 16)
+
+                // Level progress dots
+                HStack(spacing: 6) {
+                    ForEach(0 ..< LevelData.levels.count, id: \.self) { i in
+                        Circle()
+                            .fill(i == vm.currentLevelIndex
+                                  ? Color.indigo.opacity(0.75)
+                                  : Color(.systemGray4))
+                            .frame(width: i == vm.currentLevelIndex ? 8 : 6,
+                                   height: i == vm.currentLevelIndex ? 8 : 6)
+                    }
+                }
+                .padding(.bottom, 28)
 
                 Group {
                     switch vm.phase {
@@ -32,15 +46,31 @@ struct GameView: View {
                             .transition(.opacity.combined(with: .scale(scale: 0.97)))
 
                     case .success:
-                        SuccessView(onNext: vm.restart)
+                        SuccessView(isLastLevel: vm.isLastLevel, onNext: vm.advanceLevel)
                             .transition(.opacity.combined(with: .scale(scale: 0.97)))
                     }
                 }
-                .animation(.easeInOut(duration: 0.35), value: vm.phase)
+                .animation(.easeInOut(duration: 0.45), value: vm.phase)
 
                 Spacer()
             }
             .padding(.horizontal, 24)
+
+            // Success toast — brief centered overlay, fades in then out
+            if successToastVisible {
+                Text(vm.isLastLevel ? "You did great!" : "Nice!")
+                    .font(.system(size: 38, weight: .semibold, design: .rounded))
+                    .foregroundColor(Color.indigo.opacity(0.80))
+                    .allowsHitTesting(false)
+                    .transition(.opacity.combined(with: .scale(scale: 0.95)))
+            }
+        }
+        .onChange(of: vm.phase) { newPhase in
+            guard newPhase == .success else { return }
+            withAnimation(.easeOut(duration: 0.15)) { successToastVisible = true }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                withAnimation(.easeIn(duration: 0.2)) { successToastVisible = false }
+            }
         }
     }
 

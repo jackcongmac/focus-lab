@@ -7,26 +7,12 @@ final class GameViewModel: ObservableObject {
     @Published var currentStepIndex: Int = 0
     @Published var correctItemID: UUID? = nil
     @Published var errorItemID: UUID? = nil
+    @Published private(set) var currentLevelIndex: Int = 0
 
-    let level: MissionLevel
+    var level: MissionLevel { LevelData.levels[currentLevelIndex] }
+    var isLastLevel: Bool { currentLevelIndex == LevelData.levels.count - 1 }
 
     init() {
-        let circle   = PlayItem(id: UUID(), shape: .circle,   color: Color(red: 0.40, green: 0.65, blue: 0.90))
-        let square   = PlayItem(id: UUID(), shape: .square,   color: Color(red: 0.90, green: 0.50, blue: 0.45))
-        let triangle = PlayItem(id: UUID(), shape: .triangle, color: Color(red: 0.45, green: 0.75, blue: 0.60))
-        let star     = PlayItem(id: UUID(), shape: .star,     color: Color(red: 0.95, green: 0.80, blue: 0.35))
-
-        let steps: [MissionStep] = [
-            MissionStep(instruction: "Tap the blue circle",     targetItemID: circle.id),
-            MissionStep(instruction: "Now tap the yellow star", targetItemID: star.id)
-        ]
-
-        level = MissionLevel(
-            title: "Mission 1",
-            items: [circle, square, triangle, star],
-            steps: steps
-        )
-
         scheduleTransitionToPlaying()
     }
 
@@ -50,9 +36,9 @@ final class GameViewModel: ObservableObject {
                 self.currentStepIndex += 1
                 if self.currentStepIndex >= self.level.steps.count {
                     withAnimation(.easeInOut(duration: 0.35)) { self.phase = .success }
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) { [weak self] in
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 1.3) { [weak self] in
                         guard let self, self.phase == .success else { return }
-                        self.restart()
+                        self.advanceLevel()
                     }
                 }
             }
@@ -67,6 +53,11 @@ final class GameViewModel: ObservableObject {
                 self.phase = .playing
             }
         }
+    }
+
+    func advanceLevel() {
+        currentLevelIndex = isLastLevel ? 0 : currentLevelIndex + 1
+        restart()
     }
 
     func restart() {

@@ -16,6 +16,7 @@ struct PlayItemButton: View {
     let action: () -> Void
 
     @State private var shakeOffset: CGFloat = 0
+    @State private var flashOpacity: CGFloat = 0
 
     var body: some View {
         Button(action: action) {
@@ -24,6 +25,10 @@ struct PlayItemButton: View {
                     .fill(Color(.systemBackground))
                     .shadow(color: .black.opacity(0.07), radius: 10, x: 0, y: 4)
 
+                // Correct-tap highlight (soft green wash, fades with existing animation)
+                RoundedRectangle(cornerRadius: 20)
+                    .fill(Color.green.opacity(feedback == .correct ? 0.12 : 0))
+
                 // Feedback border
                 RoundedRectangle(cornerRadius: 20)
                     .stroke(borderColor, lineWidth: feedback == .correct ? 3.5 : 2.5)
@@ -31,14 +36,28 @@ struct PlayItemButton: View {
                 itemShape
                     .frame(width: 64, height: 64)
                     .opacity(feedback == .error ? 0.35 : 1.0)
+
+                // Brief white flash on correct tap
+                RoundedRectangle(cornerRadius: 20)
+                    .fill(Color.white.opacity(flashOpacity))
+                    .allowsHitTesting(false)
             }
             .aspectRatio(1, contentMode: .fit)
         }
         .buttonStyle(PressScaleButtonStyle())
-        .scaleEffect(feedback == .correct ? 1.08 : 1.0)
+        .scaleEffect(feedback == .correct ? 1.12 : 1.0)
+        .shadow(color: Color.green.opacity(feedback == .correct ? 0.35 : 0), radius: 12)
         .offset(x: shakeOffset)
-        .animation(.easeInOut(duration: 0.2), value: feedback)
+        .animation(.spring(response: 0.25, dampingFraction: 0.55), value: feedback)
         .onChange(of: feedback) { newVal in
+            if newVal == .correct {
+                // TODO: SoundManager.play(.correct)
+                UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                withAnimation(.easeOut(duration: 0.08)) { flashOpacity = 0.13 }
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.08) {
+                    withAnimation(.easeIn(duration: 0.1)) { flashOpacity = 0 }
+                }
+            }
             guard newVal == .error else { return }
             withAnimation(.easeInOut(duration: 0.05).repeatCount(5, autoreverses: true)) {
                 shakeOffset = 5
