@@ -267,3 +267,130 @@ This spec applies to:
 - Haptics
 - Adaptive timing
 - More expressive feedback
+
+---
+
+## 14. Level Progression
+
+### Philosophy
+
+Each level introduces exactly one new variable — step count, cue reduction, or distractor — so the child always knows what they're being asked to do. The first four levels use a single tap to establish the core loop before sequencing begins. Distractors appear only after 2-step sequences are stable. Three-step levels appear only at the end of the MVP set.
+
+Rule: never increase step count and introduce a distractor at the same time.
+
+---
+
+### Item Reference
+
+All levels use a 2×2 grid of 4 items:
+
+| Shape    | Color  |
+|----------|--------|
+| Circle   | Blue   |
+| Square   | Red    |
+| Triangle | Green  |
+| Star     | Yellow |
+
+---
+
+### Levels
+
+---
+
+**Level 1**
+- goal: tap one item identified by color + shape
+- items: circle (blue), square (red), triangle (green), star (yellow) — all distinct
+- steps: 1
+- instruction: "Tap the blue circle"
+- cognitive target: perception — color + shape recognition
+- difficulty note: zero ambiguity; all items fully distinct; establishes the core loop
+
+---
+
+**Level 2**
+- goal: tap one item identified by color + shape (different target)
+- items: circle (blue), square (red), triangle (green), star (yellow) — all distinct
+- steps: 1
+- instruction: "Tap the yellow star"
+- cognitive target: perception — color + shape recognition
+- difficulty note: same structure as L1; different target builds confidence before moving on
+
+---
+
+**Level 3**
+- goal: tap one item using shape only
+- items: circle, square, triangle, star — colors similar or muted to reduce color cue
+- steps: 1
+- instruction: "Tap the triangle"
+- cognitive target: perception — shape-only recognition
+- difficulty note: color removed as a reliable cue; child must distinguish by shape alone
+
+---
+
+**Level 4**
+- goal: tap one item using color only
+- items: circle (blue), square (red), triangle (green), star (yellow) — shapes similar or uniform to reduce shape cue
+- steps: 1
+- instruction: "Tap the yellow one"
+- cognitive target: perception — color-only recognition
+- difficulty note: shape removed as a reliable cue; child must distinguish by color alone
+
+---
+
+**Level 5**
+- goal: tap two items in the correct order
+- items: circle (blue), square (red), triangle (green), star (yellow) — all distinct
+- steps: 2
+- instruction: "Tap the blue circle" → "Tap the yellow star"
+- cognitive target: working memory — 2-step sequence
+- difficulty note: first sequence level; both targets fully distinct to isolate memory demand
+
+---
+
+**Level 6**
+- goal: tap two items in the correct order (different targets)
+- items: circle (blue), square (red), triangle (green), star (yellow) — all distinct
+- steps: 2
+- instruction: "Tap the green triangle" → "Tap the red square"
+- cognitive target: working memory — 2-step sequence
+- difficulty note: same format as L5; different targets reinforce sequence habit before distractors
+
+---
+
+**Level 7**
+- goal: tap two items in order while ignoring a same-color distractor
+- items: circle (blue), square (blue), triangle (green), star (yellow) — two blue items
+- steps: 2
+- instruction: "Tap the blue circle" → "Tap the blue square"
+- cognitive target: selective attention — color distractor, filter by shape
+- difficulty note: two items share blue; child must use shape to tell them apart
+
+---
+
+**Level 8**
+- goal: tap two items in order while ignoring a same-shape distractor
+- items: circle (red), circle (blue), triangle (green), star (yellow) — two circles
+- steps: 2
+- instruction: "Tap the red circle" → "Tap the blue circle"
+- cognitive target: selective attention — shape distractor, filter by color
+- difficulty note: two items share circle shape; child must use color to tell them apart
+
+---
+
+**Level 9**
+- goal: tap three items in the correct order
+- items: circle (blue), square (red), triangle (green), star (yellow) — all distinct
+- steps: 3
+- instruction: "Tap the circle" → "Tap the star" → "Tap the square"
+- cognitive target: working memory — 3-step sequence
+- difficulty note: first 3-step level; all items distinct to limit cognitive load to memory only
+
+---
+
+**Level 10**
+- goal: tap three items in order while managing mixed distractors
+- items: circle (blue), circle (red), square (blue), triangle (green) — shared color + shared shape
+- steps: 3
+- instruction: "Tap the blue circle" → "Tap the red circle" → "Tap the blue square"
+- cognitive target: working memory + selective attention — 3-step sequence with distractors
+- difficulty note: peak MVP difficulty; requires holding 3 steps while filtering by both color and shape

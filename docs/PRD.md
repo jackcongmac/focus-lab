@@ -115,7 +115,29 @@ Storage:
 
 ---
 
-## 7. UX / Design Principles
+## 7. Cognitive Design Principles
+
+Each level is designed to target one or more cognitive skills appropriate for ages 5–7:
+
+### Perception
+- Items are distinguished by color and shape
+- Instruction types: color-only, shape-only, or color + shape
+- Simpler levels use two cues; harder levels reduce to one
+
+### Selective Attention
+- Distractors are introduced as levels progress
+- Color distractors: two items share a color — child must filter by shape
+- Shape distractors: two items share a shape — child must filter by color
+- Only one distractor type is active per level to avoid overload
+
+### Working Memory
+- Steps are shown briefly, then hidden before interaction begins
+- Step count increases gradually: 1 → 2 → 3
+- Each new step is introduced only after single-step performance is stable
+
+---
+
+## 8. UX / Design Principles
 
 - Low stimulation (no overwhelming animations)
 - Clean and minimal UI
@@ -125,7 +147,7 @@ Storage:
 
 ---
 
-## 8. Technical Scope
+## 9. Technical Scope
 
 ### Platform
 - iOS (iPhone + iPad)
@@ -140,7 +162,7 @@ Storage:
 
 ---
 
-## 9. Non-Goals (MVP)
+## 10. Non-Goals (MVP)
 
 - No login/account system
 - No cloud sync
@@ -151,7 +173,7 @@ Storage:
 
 ---
 
-## 10. Success Metrics
+## 11. Success Metrics
 
 ### Engagement
 - Average session > 3 minutes
@@ -165,7 +187,7 @@ Storage:
 
 ---
 
-## 11. Future Expansion (Post-MVP)
+## 12. Future Expansion (Post-MVP)
 
 - More levels and difficulty scaling
 - Adaptive difficulty system
@@ -178,7 +200,7 @@ Storage:
 
 ---
 
-## 12. Key Differentiation
+## 13. Key Differentiation
 
 Focus Lab is not:
 - A general learning app
@@ -189,7 +211,7 @@ Focus Lab is:
 
 ---
 
-## 13. Development Phase
+## 14. Development Phase
 
 ### Phase 1 (Current)
 - Single gameplay mode
