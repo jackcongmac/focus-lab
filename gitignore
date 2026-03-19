@@ -2,12 +2,9 @@
 xcuserdata/
 *.xcuserstate
 
-# Xcode
+# Xcode build
 DerivedData/
 build/
-*.xcworkspace
-xcuserdata/
-*.xcuserstate
 
 # macOS
 .DS_Store
@@ -21,5 +18,5 @@ xcuserdata/
 # Temporary
 *.swp
 
-# Claude / AI（可选）
+# Claude / AI (optional)
 *.tmp
