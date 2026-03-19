@@ -50,6 +50,10 @@ final class GameViewModel: ObservableObject {
                 self.currentStepIndex += 1
                 if self.currentStepIndex >= self.level.steps.count {
                     withAnimation(.easeInOut(duration: 0.35)) { self.phase = .success }
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) { [weak self] in
+                        guard let self, self.phase == .success else { return }
+                        self.restart()
+                    }
                 }
             }
         } else {

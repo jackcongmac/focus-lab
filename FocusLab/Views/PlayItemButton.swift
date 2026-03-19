@@ -15,6 +15,8 @@ struct PlayItemButton: View {
     let feedback: ItemFeedback
     let action: () -> Void
 
+    @State private var shakeOffset: CGFloat = 0
+
     var body: some View {
         Button(action: action) {
             ZStack {
@@ -24,7 +26,7 @@ struct PlayItemButton: View {
 
                 // Feedback border
                 RoundedRectangle(cornerRadius: 20)
-                    .stroke(borderColor, lineWidth: 2.5)
+                    .stroke(borderColor, lineWidth: feedback == .correct ? 3.5 : 2.5)
 
                 itemShape
                     .frame(width: 64, height: 64)
@@ -33,7 +35,18 @@ struct PlayItemButton: View {
             .aspectRatio(1, contentMode: .fit)
         }
         .buttonStyle(PressScaleButtonStyle())
+        .scaleEffect(feedback == .correct ? 1.08 : 1.0)
+        .offset(x: shakeOffset)
         .animation(.easeInOut(duration: 0.2), value: feedback)
+        .onChange(of: feedback) { newVal in
+            guard newVal == .error else { return }
+            withAnimation(.easeInOut(duration: 0.05).repeatCount(5, autoreverses: true)) {
+                shakeOffset = 5
+            }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                shakeOffset = 0
+            }
+        }
     }
 
     private var borderColor: Color {
