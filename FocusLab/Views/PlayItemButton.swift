@@ -42,7 +42,7 @@ struct PlayItemButton: View {
 
                 // Icon — crossfades when item changes between levels
                 itemShape
-                    .frame(width: 64, height: 64)
+                    .frame(width: iconSize, height: iconSize)
                     .opacity(feedback == .error ? 0.35 : 1.0)
                     .id(item.id)
                     .transition(.opacity.combined(with: .scale(scale: 0.82)))
@@ -88,6 +88,27 @@ struct PlayItemButton: View {
         }
     }
 
+    /// Per-shape optical size compensation so all icons feel equally weighted.
+    /// Circle and square fill their bounding box fully; triangle and star have low
+    /// effective fill and need a larger frame to read as the same visual mass.
+    private var iconSize: CGFloat {
+        switch item.content {
+        case .shape(let s):
+            switch s {
+            case .circle:   return 58   // full disk — smallest to balance
+            case .square:   return 56   // near-full fill (rounded corners)
+            case .triangle: return 70   // ~50 % fill — needs clear upsize
+            case .star:     return 78   // thin points, lowest fill — largest frame
+            case .pentagon: return 64
+            case .oval:     return 64   // height capped inside shapeView
+            case .diamond:  return 62
+            case .hexagon:  return 64
+            }
+        case .sfSymbol, .asset:
+            return 62
+        }
+    }
+
     private var borderColor: Color {
         switch feedback {
         case .idle:    return .clear
@@ -129,7 +150,7 @@ struct PlayItemButton: View {
         case .pentagon:
             PolygonShape(sides: 5).fill(item.color)
         case .oval:
-            Ellipse().fill(item.color).frame(width: 64, height: 40)
+            Ellipse().fill(item.color).frame(width: iconSize, height: iconSize * 0.62)
         case .diamond:
             DiamondShape().fill(item.color)
         case .hexagon:

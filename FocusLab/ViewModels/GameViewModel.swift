@@ -10,6 +10,7 @@ final class GameViewModel: ObservableObject {
     @Published var errorItemID: UUID? = nil
     @Published private(set) var currentLevelIndex: Int = 0
     @Published var feedbackMessage: String? = nil
+    @Published var feedbackKind: FeedbackKind = .neutral
 
     private var lastCorrectMessage:    String? = nil
     private var lastErrorMessage:      String? = nil
@@ -68,6 +69,7 @@ final class GameViewModel: ObservableObject {
                     self.lastCompletionMessage = msg
                     self.successMessage = msg
                     self.feedbackMessage = nil
+                    self.feedbackKind = .neutral
                     self.phase = .success
                     // Hold tile highlight for 0.6 s then clear
                     DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) { [weak self] in
@@ -84,6 +86,7 @@ final class GameViewModel: ObservableObject {
                     let msg = FeedbackMessages.pick(from: FeedbackMessages.correct,
                                                    avoiding: self.lastCorrectMessage)
                     self.lastCorrectMessage = msg
+                    self.feedbackKind = .success
                     self.feedbackMessage = msg
                     DispatchQueue.main.asyncAfter(deadline: .now() + 0.45) { [weak self] in
                         guard let self, self.phase == .playing else { return }
@@ -97,6 +100,7 @@ final class GameViewModel: ObservableObject {
             let msg = FeedbackMessages.pick(from: FeedbackMessages.error,
                                             avoiding: lastErrorMessage)
             lastErrorMessage = msg
+            feedbackKind = .neutral
             feedbackMessage  = msg
             phase = .error
             errorItemID = item.id
@@ -119,6 +123,7 @@ final class GameViewModel: ObservableObject {
             let themeName = currentSet.theme.displayName
             restart()
             // Brief theme name ("Animals", "Vehicles", "Shapes") in feedback area
+            feedbackKind = .neutral
             feedbackMessage = themeName
             DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { [weak self] in
                 guard let self, self.feedbackMessage == themeName else { return }
@@ -136,6 +141,7 @@ final class GameViewModel: ObservableObject {
         correctItemID = nil
         errorItemID = nil
         feedbackMessage = nil
+        feedbackKind = .neutral
         successMessage = nil
         currentStepIndex = 0
         phase = .playing
