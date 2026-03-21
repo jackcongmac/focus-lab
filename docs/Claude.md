@@ -41,3 +41,7 @@ Core abilities:
 - Keep files modular
 - Avoid large monolithic views
 - Prefer simple, readable SwiftUI
+
+##Visual Design guidence 
+- Use VisualSystem_Core.md as the source of truth for all UI implementation
+- Ignore VisualSystem_Vision.md for implementation unless explicitly instructed.

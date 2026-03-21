@@ -1,7 +1,7 @@
 # Focus Lab – Memory
 
 - MVP only includes Step Mission gameplay
-- No sound for now
+- Have AI sound
 - No subscription yet
 - Target age: 5–7
 - Keep UI minimal and calm

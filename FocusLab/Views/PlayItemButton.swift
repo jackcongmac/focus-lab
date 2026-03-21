@@ -13,10 +13,12 @@ enum ItemFeedback: Equatable {
 struct PlayItemButton: View {
     let item: PlayItem
     let feedback: ItemFeedback
+    let isHinted: Bool
     let action: () -> Void
 
     @State private var shakeOffset: CGFloat = 0
     @State private var flashOpacity: CGFloat = 0
+    @State private var hintPulse: Bool = false
 
     var body: some View {
         Button(action: action) {
@@ -33,9 +35,17 @@ struct PlayItemButton: View {
                 RoundedRectangle(cornerRadius: 20)
                     .stroke(borderColor, lineWidth: feedback == .correct ? 3.5 : 2.5)
 
+                // Hint ring — pulsing amber glow when player is idle > 4 s
+                RoundedRectangle(cornerRadius: 20)
+                    .stroke(Color.orange.opacity(hintPulse ? 0.60 : 0.20), lineWidth: 3)
+                    .opacity(isHinted && feedback == .idle ? 1 : 0)
+
+                // Icon — crossfades when item changes between levels
                 itemShape
                     .frame(width: 64, height: 64)
                     .opacity(feedback == .error ? 0.35 : 1.0)
+                    .id(item.id)
+                    .transition(.opacity.combined(with: .scale(scale: 0.82)))
 
                 // Brief white flash on correct tap
                 RoundedRectangle(cornerRadius: 20)
@@ -43,6 +53,7 @@ struct PlayItemButton: View {
                     .allowsHitTesting(false)
             }
             .aspectRatio(1, contentMode: .fit)
+            .animation(.easeInOut(duration: 0.2), value: item.id)
         }
         .buttonStyle(PressScaleButtonStyle())
         .scaleEffect(feedback == .correct ? 1.12 : 1.0)
@@ -66,6 +77,15 @@ struct PlayItemButton: View {
                 shakeOffset = 0
             }
         }
+        .onChange(of: isHinted) { hinted in
+            if hinted {
+                withAnimation(.easeInOut(duration: 0.9).repeatForever(autoreverses: true)) {
+                    hintPulse = true
+                }
+            } else {
+                withAnimation(.linear(duration: 0.15)) { hintPulse = false }
+            }
+        }
     }
 
     private var borderColor: Color {
@@ -78,19 +98,42 @@ struct PlayItemButton: View {
 
     @ViewBuilder
     private var itemShape: some View {
-        switch item.shape {
+        switch item.content {
+        case .shape(let s):
+            shapeView(s)
+        case .sfSymbol(let name, _):
+            Image(systemName: name)
+                .resizable()
+                .scaledToFit()
+                .foregroundColor(item.color)
+        case .asset(let name, _):
+            Image(name)
+                .resizable()
+                .renderingMode(.template)
+                .scaledToFit()
+                .foregroundColor(item.color)
+        }
+    }
+
+    @ViewBuilder
+    private func shapeView(_ s: ItemShape) -> some View {
+        switch s {
         case .circle:
-            Circle()
-                .fill(item.color)
+            Circle().fill(item.color)
         case .square:
-            RoundedRectangle(cornerRadius: 10)
-                .fill(item.color)
+            RoundedRectangle(cornerRadius: 10).fill(item.color)
         case .triangle:
-            TriangleShape()
-                .fill(item.color)
+            TriangleShape().fill(item.color)
         case .star:
-            StarShape()
-                .fill(item.color)
+            StarShape().fill(item.color)
+        case .pentagon:
+            PolygonShape(sides: 5).fill(item.color)
+        case .oval:
+            Ellipse().fill(item.color).frame(width: 64, height: 40)
+        case .diamond:
+            DiamondShape().fill(item.color)
+        case .hexagon:
+            PolygonShape(sides: 6).fill(item.color)
         }
     }
 }
@@ -100,7 +143,7 @@ struct PlayItemButton: View {
 private struct PressScaleButtonStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
-            .scaleEffect(configuration.isPressed ? 0.95 : 1.0)
+            .scaleEffect(configuration.isPressed ? 0.98 : 1.0)
             .animation(
                 configuration.isPressed
                     ? .easeIn(duration: 0.08)
@@ -141,6 +184,41 @@ private struct StarShape: Shape {
             )
             i == 0 ? path.move(to: point) : path.addLine(to: point)
         }
+        path.closeSubpath()
+        return path
+    }
+}
+
+/// Regular n-sided polygon with a vertex at the top.
+private struct PolygonShape: Shape {
+    let sides: Int
+
+    func path(in rect: CGRect) -> Path {
+        let center = CGPoint(x: rect.midX, y: rect.midY)
+        let r      = min(rect.width, rect.height) / 2
+        var path   = Path()
+
+        for i in 0 ..< sides {
+            let angle = (Double(i) * 2 * .pi / Double(sides)) - (.pi / 2)
+            let point = CGPoint(
+                x: center.x + CGFloat(cos(angle)) * r,
+                y: center.y + CGFloat(sin(angle)) * r
+            )
+            i == 0 ? path.move(to: point) : path.addLine(to: point)
+        }
+        path.closeSubpath()
+        return path
+    }
+}
+
+/// Four-point rhombus (diamond) aligned to the bounding rect midpoints.
+private struct DiamondShape: Shape {
+    func path(in rect: CGRect) -> Path {
+        var path = Path()
+        path.move(to:    CGPoint(x: rect.midX, y: rect.minY))
+        path.addLine(to: CGPoint(x: rect.maxX, y: rect.midY))
+        path.addLine(to: CGPoint(x: rect.midX, y: rect.maxY))
+        path.addLine(to: CGPoint(x: rect.minX, y: rect.midY))
         path.closeSubpath()
         return path
     }

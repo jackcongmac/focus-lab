@@ -2,7 +2,7 @@ import SwiftUI
 
 struct GameView: View {
     @StateObject private var vm = GameViewModel()
-    @State private var successToastVisible = false
+    @AppStorage(VoiceManager.enabledKey) private var voiceEnabled = true
 
     private let columns = [
         GridItem(.flexible(), spacing: 16),
@@ -15,16 +15,28 @@ struct GameView: View {
                 .ignoresSafeArea()
 
             VStack(spacing: 0) {
-                Text("Focus Lab")
-                    .font(.system(size: 28, weight: .bold, design: .rounded))
-                    .foregroundColor(Color.indigo.opacity(0.85))
-                    .frame(maxWidth: .infinity)
-                    .padding(.top, 52)
-                    .padding(.bottom, 16)
+                ZStack(alignment: .trailing) {
+                    Text("Focus Lab")
+                        .font(.system(size: 28, weight: .bold, design: .rounded))
+                        .foregroundColor(Color.indigo.opacity(0.85))
+                        .frame(maxWidth: .infinity)
+
+                    Button {
+                        voiceEnabled.toggle()
+                        if !voiceEnabled { VoiceManager.shared.stop() }
+                    } label: {
+                        Image(systemName: voiceEnabled ? "speaker.wave.2" : "speaker.slash")
+                            .font(.body)
+                            .foregroundStyle(Color.secondary.opacity(0.55))
+                    }
+                    .buttonStyle(.plain)
+                }
+                .padding(.top, 52)
+                .padding(.bottom, 16)
 
                 // Level progress dots
                 HStack(spacing: 6) {
-                    ForEach(0 ..< LevelData.levels.count, id: \.self) { i in
+                    ForEach(0 ..< vm.levelCount, id: \.self) { i in
                         Circle()
                             .fill(i == vm.currentLevelIndex
                                   ? Color.indigo.opacity(0.75)
@@ -35,42 +47,12 @@ struct GameView: View {
                 }
                 .padding(.bottom, 28)
 
-                Group {
-                    switch vm.phase {
-                    case .instructions:
-                        InstructionsView(steps: vm.level.steps)
-                            .transition(.opacity.combined(with: .scale(scale: 0.97)))
-
-                    case .playing, .error:
-                        playingContent
-                            .transition(.opacity.combined(with: .scale(scale: 0.97)))
-
-                    case .success:
-                        SuccessView(isLastLevel: vm.isLastLevel, onNext: vm.advanceLevel)
-                            .transition(.opacity.combined(with: .scale(scale: 0.97)))
-                    }
-                }
-                .animation(.easeInOut(duration: 0.45), value: vm.phase)
+                playingContent
+                    .allowsHitTesting(vm.phase == .playing || vm.phase == .error)
 
                 Spacer()
             }
             .padding(.horizontal, 24)
-
-            // Success toast — brief centered overlay, fades in then out
-            if successToastVisible {
-                Text(vm.isLastLevel ? "You did great!" : "Nice!")
-                    .font(.system(size: 38, weight: .semibold, design: .rounded))
-                    .foregroundColor(Color.indigo.opacity(0.80))
-                    .allowsHitTesting(false)
-                    .transition(.opacity.combined(with: .scale(scale: 0.95)))
-            }
-        }
-        .onChange(of: vm.phase) { newPhase in
-            guard newPhase == .success else { return }
-            withAnimation(.easeOut(duration: 0.15)) { successToastVisible = true }
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
-                withAnimation(.easeIn(duration: 0.2)) { successToastVisible = false }
-            }
         }
     }
 
@@ -83,15 +65,17 @@ struct GameView: View {
     @ViewBuilder
     private var playingContent: some View {
         VStack(spacing: 28) {
-            // Current step prompt
-            if let step = vm.currentStep {
-                Text(step.instruction)
-                    .font(.title3)
-                    .fontWeight(.medium)
-                    .multilineTextAlignment(.center)
-                    .foregroundColor(.primary.opacity(0.75))
-                    .animation(.easeInOut, value: vm.currentStepIndex)
-            }
+            // Instruction area — shows step instruction or success message in place
+            Text(vm.displayInstruction ?? " ")
+                .font(.title3)
+                .fontWeight(.medium)
+                .multilineTextAlignment(.center)
+                .foregroundColor(vm.phase == .success
+                    ? Color.indigo.opacity(0.80)
+                    : .primary.opacity(0.75))
+                .opacity(vm.displayInstruction != nil ? 1 : 0)
+                .scaleEffect(vm.phase == .success ? 1.06 : 1.0)
+                .animation(.spring(response: 0.3, dampingFraction: 0.6), value: vm.phase == .success)
 
             // Progress dots
             HStack(spacing: 10) {
@@ -99,23 +83,28 @@ struct GameView: View {
                     Circle()
                         .fill(i < vm.currentStepIndex ? Color.indigo : Color(.systemGray4))
                         .frame(width: 9, height: 9)
-                        .animation(.spring(response: 0.3), value: vm.currentStepIndex)
+                        .animation(.easeInOut(duration: 0.15), value: vm.currentStepIndex)
                 }
             }
 
-            // "Let's try again" message (Spec 4.3)
-            Text("Let's try again")
+            // Inline feedback message (correct step + error)
+            Text(vm.feedbackMessage ?? "")
                 .font(.subheadline)
+                .fontWeight(.medium)
                 .foregroundColor(.secondary)
-                .opacity(vm.phase == .error ? 1 : 0)
-                .animation(.easeInOut(duration: 0.15), value: vm.phase)
+                .opacity(vm.feedbackMessage != nil ? 1 : 0)
+                .animation(.easeInOut(duration: 0.15), value: vm.feedbackMessage != nil)
 
-            // 2×2 tap grid
+            // Companion orb — reacts to correct taps and level success
+            CalmOrbView(isActive: vm.correctItemID != nil, isSuccess: vm.phase == .success)
+
+            // 2×2 tap grid — position-based identity keeps tile cards persistent across levels
             LazyVGrid(columns: columns, spacing: 16) {
-                ForEach(vm.level.items) { item in
+                ForEach(Array(vm.level.items.enumerated()), id: \.offset) { _, item in
                     PlayItemButton(
                         item: item,
-                        feedback: itemFeedback(for: item)
+                        feedback: itemFeedback(for: item),
+                        isHinted: vm.hintItemID == item.id
                     ) {
                         vm.itemTapped(item)
                     }

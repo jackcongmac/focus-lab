@@ -1,183 +1,194 @@
 import SwiftUI
 
-// MARK: - Shared Colors
-
-private let colorBlue   = Color(red: 0.40, green: 0.65, blue: 0.90)
-private let colorRed    = Color(red: 0.90, green: 0.50, blue: 0.45)
-private let colorGreen  = Color(red: 0.45, green: 0.75, blue: 0.60)
-private let colorYellow = Color(red: 0.95, green: 0.80, blue: 0.35)
-// Muted: used in L3 to remove color as a cue (shape-only recognition)
-private let colorMuted  = Color(red: 0.72, green: 0.72, blue: 0.75)
-
 // MARK: - Level Catalogue
 
 enum LevelData {
 
-    /// All 10 levels in order. Each call to `levels` produces fresh UUIDs,
-    /// which is fine — the array is accessed once at app start.
-    static let levels: [MissionLevel] = [
-        level1(), level2(), level3(), level4(), level5(),
-        level6(), level7(), level8(), level9(), level10()
-    ]
+    /// Generates 10 levels for a content set. The cognitive structure is identical
+    /// across all sets; only the item vocabulary changes.
+    static func levels(for set: ContentSet) -> [MissionLevel] {
+        let v = Vocabulary.make(for: set)
+        return [
+            level1(v), level2(v), level3(v), level4(v), level5(v),
+            level6(v), level7(v), level8(v), level9(v), level10(v)
+        ]
+    }
+}
+
+// MARK: - Vocabulary
+
+/// The 4 canonical PlayItems for a theme, used by all level builders.
+/// Slot order: [0] blue  [1] red  [2] green  [3] yellow
+private struct Vocabulary {
+    let items: [PlayItem]
+
+    subscript(i: Int) -> PlayItem { items[i] }
+
+    /// Creates a variant of items[index] with a different color (fresh UUID).
+    func variant(_ index: Int, color: ItemColor) -> PlayItem {
+        PlayItem(id: UUID(), content: items[index].content, itemColor: color)
+    }
+
+    /// Slot-to-color mapping: position 0 → blue, 1 → red, 2 → green, 3 → yellow.
+    /// Color is NOT stored on Item — it is assigned here by slot index.
+    private static let slotColors: [ItemColor] = [.blue, .red, .green, .yellow]
+
+    static func make(for set: ContentSet) -> Vocabulary {
+        let items = set.items.enumerated().map { index, item in
+            PlayItem(id: item.id, content: item.type, itemColor: Self.slotColors[index])
+        }
+        return Vocabulary(items: items)
+    }
+}
+
+// MARK: - PlayItem instruction helpers
+
+private extension PlayItem {
+    /// "blue circle" / "blue rabbit" / "blue car"
+    var colorAndType: String { "\(itemColor.displayName) \(content.displayName)" }
+    /// "circle" / "rabbit" / "car"  (for type-only levels)
+    var typeName: String { content.displayName }
 }
 
 // MARK: - Level Builders
+//
+// Each builder encodes a cognitive template. All 10 builders are
+// theme-agnostic — they compose from the Vocabulary and derive
+// instruction text automatically.
+//
+// Slot conventions used throughout:
+//   v[0] = blue item    v[1] = red item
+//   v[2] = green item   v[3] = yellow item
 
-// L1 — perception: color + shape (1 step, all distinct)
-private func level1() -> MissionLevel {
-    let circle   = PlayItem(id: UUID(), shape: .circle,   color: colorBlue)
-    let square   = PlayItem(id: UUID(), shape: .square,   color: colorRed)
-    let triangle = PlayItem(id: UUID(), shape: .triangle, color: colorGreen)
-    let star     = PlayItem(id: UUID(), shape: .star,     color: colorYellow)
-    return MissionLevel(
+// L1 — perception: color + shape (1 step, tap the blue item)
+private func level1(_ v: Vocabulary) -> MissionLevel {
+    MissionLevel(
         title: "Level 1",
-        items: [circle, square, triangle, star],
+        items: [v[0], v[1], v[2], v[3]],
         steps: [
-            MissionStep(instruction: "Tap the blue circle", targetItemID: circle.id)
+            MissionStep(instruction: "Tap the \(v[0].colorAndType)", targetItemID: v[0].id)
         ]
     )
 }
 
-// L2 — perception: color + shape (1 step, different target)
-private func level2() -> MissionLevel {
-    let circle   = PlayItem(id: UUID(), shape: .circle,   color: colorBlue)
-    let square   = PlayItem(id: UUID(), shape: .square,   color: colorRed)
-    let triangle = PlayItem(id: UUID(), shape: .triangle, color: colorGreen)
-    let star     = PlayItem(id: UUID(), shape: .star,     color: colorYellow)
-    return MissionLevel(
+// L2 — perception: color + shape (1 step, tap the yellow item)
+private func level2(_ v: Vocabulary) -> MissionLevel {
+    MissionLevel(
         title: "Level 2",
-        items: [circle, square, triangle, star],
+        items: [v[0], v[1], v[2], v[3]],
         steps: [
-            MissionStep(instruction: "Tap the yellow star", targetItemID: star.id)
+            MissionStep(instruction: "Tap the \(v[3].colorAndType)", targetItemID: v[3].id)
         ]
     )
 }
 
-// L3 — perception: shape only (1 step, all items same muted color)
-private func level3() -> MissionLevel {
-    let circle   = PlayItem(id: UUID(), shape: .circle,   color: colorMuted)
-    let square   = PlayItem(id: UUID(), shape: .square,   color: colorMuted)
-    let triangle = PlayItem(id: UUID(), shape: .triangle, color: colorMuted)
-    let star     = PlayItem(id: UUID(), shape: .star,     color: colorMuted)
+// L3 — perception: type only (all muted — color removed as a cue)
+private func level3(_ v: Vocabulary) -> MissionLevel {
+    let m0 = v.variant(0, color: .muted)
+    let m1 = v.variant(1, color: .muted)
+    let m2 = v.variant(2, color: .muted)
+    let m3 = v.variant(3, color: .muted)
     return MissionLevel(
         title: "Level 3",
-        items: [circle, square, triangle, star],
+        items: [m0, m1, m2, m3],
         steps: [
-            MissionStep(instruction: "Tap the triangle", targetItemID: triangle.id)
+            MissionStep(instruction: "Tap the \(v[2].typeName)", targetItemID: m2.id)
         ]
     )
 }
 
-// L4 — perception: color only (1 step, all items same shape — circle)
-private func level4() -> MissionLevel {
-    let blueCircle   = PlayItem(id: UUID(), shape: .circle, color: colorBlue)
-    let redCircle    = PlayItem(id: UUID(), shape: .circle, color: colorRed)
-    let greenCircle  = PlayItem(id: UUID(), shape: .circle, color: colorGreen)
-    let yellowCircle = PlayItem(id: UUID(), shape: .circle, color: colorYellow)
+// L4 — perception: color only (all same type, 4 colors)
+private func level4(_ v: Vocabulary) -> MissionLevel {
+    let b = v.variant(0, color: .blue)
+    let r = v.variant(0, color: .red)
+    let g = v.variant(0, color: .green)
+    let y = v.variant(0, color: .yellow)
     return MissionLevel(
         title: "Level 4",
-        items: [blueCircle, redCircle, greenCircle, yellowCircle],
+        items: [b, r, g, y],
         steps: [
-            MissionStep(instruction: "Tap the yellow one", targetItemID: yellowCircle.id)
+            MissionStep(instruction: "Tap the yellow one", targetItemID: y.id)
         ]
     )
 }
 
-// L5 — working memory: 2-step sequence (all distinct)
-private func level5() -> MissionLevel {
-    let circle   = PlayItem(id: UUID(), shape: .circle,   color: colorBlue)
-    let square   = PlayItem(id: UUID(), shape: .square,   color: colorRed)
-    let triangle = PlayItem(id: UUID(), shape: .triangle, color: colorGreen)
-    let star     = PlayItem(id: UUID(), shape: .star,     color: colorYellow)
-    return MissionLevel(
+// L5 — working memory: 2-step sequence (tap blue, then yellow)
+private func level5(_ v: Vocabulary) -> MissionLevel {
+    MissionLevel(
         title: "Level 5",
-        items: [circle, square, triangle, star],
+        items: [v[0], v[1], v[2], v[3]],
         steps: [
-            MissionStep(instruction: "Tap the blue circle",  targetItemID: circle.id),
-            MissionStep(instruction: "Tap the yellow star",  targetItemID: star.id)
+            MissionStep(instruction: "Tap the \(v[0].colorAndType)", targetItemID: v[0].id),
+            MissionStep(instruction: "Tap the \(v[3].colorAndType)", targetItemID: v[3].id)
         ]
     )
 }
 
-// L6 — working memory: 2-step sequence (all distinct, different targets)
-private func level6() -> MissionLevel {
-    let circle   = PlayItem(id: UUID(), shape: .circle,   color: colorBlue)
-    let square   = PlayItem(id: UUID(), shape: .square,   color: colorRed)
-    let triangle = PlayItem(id: UUID(), shape: .triangle, color: colorGreen)
-    let star     = PlayItem(id: UUID(), shape: .star,     color: colorYellow)
-    return MissionLevel(
+// L6 — working memory: 2-step sequence (tap green, then red)
+private func level6(_ v: Vocabulary) -> MissionLevel {
+    MissionLevel(
         title: "Level 6",
-        items: [circle, square, triangle, star],
+        items: [v[0], v[1], v[2], v[3]],
         steps: [
-            MissionStep(instruction: "Tap the green triangle", targetItemID: triangle.id),
-            MissionStep(instruction: "Tap the red square",     targetItemID: square.id)
+            MissionStep(instruction: "Tap the \(v[2].colorAndType)", targetItemID: v[2].id),
+            MissionStep(instruction: "Tap the \(v[1].colorAndType)", targetItemID: v[1].id)
         ]
     )
 }
 
-// L7 — selective attention: color distractor (two blue items, filter by shape)
-private func level7() -> MissionLevel {
-    let circle   = PlayItem(id: UUID(), shape: .circle,   color: colorBlue)
-    let square   = PlayItem(id: UUID(), shape: .square,   color: colorBlue)
-    let triangle = PlayItem(id: UUID(), shape: .triangle, color: colorGreen)
-    let star     = PlayItem(id: UUID(), shape: .star,     color: colorYellow)
+// L7 — selective attention: color distractor
+//      v[0] and a v[1]-variant share v[0]'s color — child must use type to distinguish
+private func level7(_ v: Vocabulary) -> MissionLevel {
+    let blueV1 = v.variant(1, color: v[0].itemColor)
     return MissionLevel(
         title: "Level 7",
-        items: [circle, square, triangle, star],
+        items: [v[0], blueV1, v[2], v[3]],
         steps: [
-            MissionStep(instruction: "Tap the blue circle", targetItemID: circle.id),
-            MissionStep(instruction: "Tap the blue square", targetItemID: square.id)
+            MissionStep(instruction: "Tap the \(v[0].colorAndType)",    targetItemID: v[0].id),
+            MissionStep(instruction: "Tap the \(blueV1.colorAndType)",  targetItemID: blueV1.id)
         ]
     )
 }
 
-// L8 — selective attention: shape distractor (two circles, filter by color)
-private func level8() -> MissionLevel {
-    let redCircle  = PlayItem(id: UUID(), shape: .circle,   color: colorRed)
-    let blueCircle = PlayItem(id: UUID(), shape: .circle,   color: colorBlue)
-    let triangle   = PlayItem(id: UUID(), shape: .triangle, color: colorGreen)
-    let star       = PlayItem(id: UUID(), shape: .star,     color: colorYellow)
+// L8 — selective attention: type distractor
+//      two items share v[0]'s type with different colors — child must use color to distinguish
+private func level8(_ v: Vocabulary) -> MissionLevel {
+    let redV0 = v.variant(0, color: .red)
     return MissionLevel(
         title: "Level 8",
-        items: [redCircle, blueCircle, triangle, star],
+        items: [v[0], redV0, v[2], v[3]],
         steps: [
-            MissionStep(instruction: "Tap the red circle",  targetItemID: redCircle.id),
-            MissionStep(instruction: "Tap the blue circle", targetItemID: blueCircle.id)
+            MissionStep(instruction: "Tap the \(v[0].colorAndType)",  targetItemID: v[0].id),
+            MissionStep(instruction: "Tap the \(redV0.colorAndType)", targetItemID: redV0.id)
         ]
     )
 }
 
-// L9 — working memory: 3-step sequence (all distinct, shape-only instructions)
-private func level9() -> MissionLevel {
-    let circle   = PlayItem(id: UUID(), shape: .circle,   color: colorBlue)
-    let square   = PlayItem(id: UUID(), shape: .square,   color: colorRed)
-    let triangle = PlayItem(id: UUID(), shape: .triangle, color: colorGreen)
-    let star     = PlayItem(id: UUID(), shape: .star,     color: colorYellow)
-    return MissionLevel(
+// L9 — working memory: 3-step sequence using type-only instructions
+private func level9(_ v: Vocabulary) -> MissionLevel {
+    MissionLevel(
         title: "Level 9",
-        items: [circle, square, triangle, star],
+        items: [v[0], v[1], v[2], v[3]],
         steps: [
-            MissionStep(instruction: "Tap the circle",   targetItemID: circle.id),
-            MissionStep(instruction: "Tap the star",     targetItemID: star.id),
-            MissionStep(instruction: "Tap the square",   targetItemID: square.id)
+            MissionStep(instruction: "Tap the \(v[0].typeName)", targetItemID: v[0].id),
+            MissionStep(instruction: "Tap the \(v[3].typeName)", targetItemID: v[3].id),
+            MissionStep(instruction: "Tap the \(v[1].typeName)", targetItemID: v[1].id)
         ]
     )
 }
 
-// L10 — working memory + selective attention: 3-step sequence with mixed distractors
-//        (two circles + two blue items — child must use both color and shape)
-private func level10() -> MissionLevel {
-    let blueCircle  = PlayItem(id: UUID(), shape: .circle,   color: colorBlue)
-    let redCircle   = PlayItem(id: UUID(), shape: .circle,   color: colorRed)
-    let blueSquare  = PlayItem(id: UUID(), shape: .square,   color: colorBlue)
-    let triangle    = PlayItem(id: UUID(), shape: .triangle, color: colorGreen)
+// L10 — working memory + selective attention: 3-step mixed distractor
+//       two v[0]-type items + two v[0]-color items — child must use both cues
+private func level10(_ v: Vocabulary) -> MissionLevel {
+    let redV0  = v.variant(0, color: .red)
+    let blueV1 = v.variant(1, color: v[0].itemColor)
     return MissionLevel(
         title: "Level 10",
-        items: [blueCircle, redCircle, blueSquare, triangle],
+        items: [v[0], redV0, blueV1, v[2]],
         steps: [
-            MissionStep(instruction: "Tap the blue circle",  targetItemID: blueCircle.id),
-            MissionStep(instruction: "Tap the red circle",   targetItemID: redCircle.id),
-            MissionStep(instruction: "Tap the blue square",  targetItemID: blueSquare.id)
+            MissionStep(instruction: "Tap the \(v[0].colorAndType)",   targetItemID: v[0].id),
+            MissionStep(instruction: "Tap the \(redV0.colorAndType)",  targetItemID: redV0.id),
+            MissionStep(instruction: "Tap the \(blueV1.colorAndType)", targetItemID: blueV1.id)
         ]
     )
 }
