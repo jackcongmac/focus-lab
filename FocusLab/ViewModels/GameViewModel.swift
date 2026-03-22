@@ -1,6 +1,17 @@
 import SwiftUI
 import Combine
 
+// MARK: - Session state
+
+enum SessionState {
+    case idle       // no session has been started
+    case active     // session in progress (includes 2-second start buffer)
+    case paused     // user navigated to Home mid-session
+    case completed  // timer ran to zero; summary shown
+}
+
+// MARK: - GameViewModel
+
 @MainActor
 final class GameViewModel: ObservableObject {
     @Published var phase: GamePhase = .playing
@@ -12,20 +23,32 @@ final class GameViewModel: ObservableObject {
     @Published var feedbackMessage: String? = nil
     @Published var feedbackKind: FeedbackKind = .neutral
 
+    // MARK: - Session tracking
+
+    @Published private(set) var sessionState:  SessionState = .idle
+    @Published private(set) var timeRemaining: TimeInterval = 600
+    @Published private(set) var sessionEnded:  Bool = false
+    @Published private(set) var lastRecord:    SessionRecord? = nil
+
+    private var correctTaps:      Int = 0
+    private var totalTaps:        Int = 0
+    private var levelsCompleted:  Int = 0
+    private var visitedSetNames:  [String] = []   // ordered, deduplicated on append
+    private var sessionStartDate  = Date()
+    private var sessionTimer:     Timer? = nil
+
+    // MARK: - Game state
+
     private var lastCorrectMessage:    String? = nil
     private var lastErrorMessage:      String? = nil
     private var lastCompletionMessage: String? = nil
 
-    /// Visual hint — set to the target item ID when the player is idle > 4 s.
     @Published var hintItemID: UUID? = nil
 
-    // Arm gate — fires after start audio + grace period; only then schedules the 3 hint timers.
     private var hintArmWork: DispatchWorkItem? = nil
-
-    // Three progressive hint timers (all cancelled on any tap / step change).
-    private var hintWork1: DispatchWorkItem? = nil   // 2 s – audio
-    private var hintWork2: DispatchWorkItem? = nil   // 4 s – highlight
-    private var hintWork3: DispatchWorkItem? = nil   // 6 s – audio again
+    private var hintWork1:   DispatchWorkItem? = nil
+    private var hintWork2:   DispatchWorkItem? = nil
+    private var hintWork3:   DispatchWorkItem? = nil
 
     private var currentSetIndex: Int = 0
     private var currentSet: ContentSet { ItemLibrary.allSets[currentSetIndex] }
@@ -35,13 +58,16 @@ final class GameViewModel: ObservableObject {
     var isLastLevel: Bool { currentLevelIndex == themeLevels.count - 1 }
     var levelCount: Int { themeLevels.count }
 
-    /// Instruction area text: success message during .success, step instruction otherwise.
-    var displayInstruction: String? {
-        successMessage ?? currentStep?.instruction
+    /// The theme currently in play, or nil when no session is running.
+    /// Used by ParentView to lock the active theme's toggle mid-session.
+    var activeTheme: ThemeType? {
+        guard sessionState == .active || sessionState == .paused else { return nil }
+        return currentSet.theme
     }
 
-    init() {
-        speakLevelInstruction()   // armHints called inside
+    var displayInstruction: String? {
+        if isInStartBuffer { return startBufferMessage }
+        return successMessage ?? currentStep?.instruction
     }
 
     var currentStep: MissionStep? {
@@ -49,29 +75,180 @@ final class GameViewModel: ObservableObject {
         return level.steps[currentStepIndex]
     }
 
-    // Prevent taps while a feedback animation is in flight
+    /// "4:12 left" — shown in the top bar
+    var timeRemainingText: String {
+        let t = max(0, Int(timeRemaining))
+        return String(format: "%d:%02d left", t / 60, t % 60)
+    }
+
     private var isFeedbackActive: Bool { correctItemID != nil || errorItemID != nil }
 
+    // MARK: - Start buffer
+
+    /// True during the 2-second silent window after tapping Start.
+    @Published private(set) var isInStartBuffer:    Bool    = false
+    /// "Session Started" for the first second; nil during the fade-out second.
+    @Published private(set) var startBufferMessage: String? = nil
+    private var startBufferWork: DispatchWorkItem? = nil
+
+    // MARK: - Session lifecycle
+
+    /// Resets all session and game state, then waits 2 seconds before starting
+    /// the countdown timer and playing the first instruction audio.
+    /// Called when "Start" is tapped or "Practice Again" is chosen.
+    func startSession() {
+        // Cancel any in-flight start buffer
+        startBufferWork?.cancel()
+        startBufferWork = nil
+
+        // Stop anything in progress
+        sessionTimer?.invalidate()
+        sessionTimer = nil
+        cancelHints()
+        VoiceManager.shared.stop()
+
+        // Session metrics
+        let store = SessionStore.shared
+        timeRemaining    = store.selectedDuration.seconds
+        sessionStartDate = Date()
+        correctTaps      = 0
+        totalTaps        = 0
+        levelsCompleted  = 0
+        visitedSetNames  = []
+        sessionEnded     = false
+        lastRecord       = nil
+
+        // Pick starting set: first enabled theme, defaulting to 0
+        currentSetIndex = firstEnabledSetIndex()
+        themeLevels     = LevelData.levels(for: currentSet)
+        recordVisit()
+
+        // Game state
+        correctItemID    = nil
+        errorItemID      = nil
+        feedbackMessage  = nil
+        feedbackKind     = .neutral
+        successMessage   = nil
+        currentStepIndex = 0
+        currentLevelIndex = 0
+        phase            = .playing
+        sessionState     = .active
+
+        // 2-second buffer before gameplay begins:
+        //   t=0s  "Session Started" appears in the instruction area
+        //   t=1s  "Session Started" fades out over 1 second (message set to nil)
+        //   t=2s  real instruction, audio, and timer all start together
+        isInStartBuffer    = true
+        startBufferMessage = "Session Started"
+
+        // t=1s: begin fade-out by clearing the message
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) { [weak self] in
+            guard let self, self.isInStartBuffer else { return }
+            self.startBufferMessage = nil
+        }
+
+        // t=2s: end buffer and start real gameplay
+        let work = DispatchWorkItem { [weak self] in
+            guard let self else { return }
+            self.isInStartBuffer    = false
+            self.startBufferWork    = nil
+            self.speakLevelInstruction()
+            self.scheduleSessionTimer()
+        }
+        startBufferWork = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2.0, execute: work)
+    }
+
+    private func scheduleSessionTimer() {
+        sessionTimer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { [weak self] _ in
+            guard let self else { return }
+            Task { @MainActor in self.tick() }
+        }
+    }
+
+    private func tick() {
+        guard !sessionEnded else { return }
+        timeRemaining -= 1
+        if timeRemaining <= 0 {
+            timeRemaining = 0
+            finishSession()
+        }
+    }
+
+    private func finishSession() {
+        startBufferWork?.cancel()
+        startBufferWork = nil
+        isInStartBuffer = false
+        sessionTimer?.invalidate()
+        sessionTimer = nil
+        cancelHints()
+        VoiceManager.shared.stop()
+
+        let store = SessionStore.shared
+        let record = SessionRecord(
+            id: UUID(),
+            date: sessionStartDate,
+            selectedMinutes: store.selectedDuration.rawValue,
+            secondsPlayed: store.selectedDuration.seconds,   // timer ran to zero
+            levelsCompleted: levelsCompleted,
+            correctTaps: correctTaps,
+            totalTaps: totalTaps,
+            themes: visitedSetNames
+        )
+        store.add(record)
+        lastRecord   = record
+        sessionEnded = true
+        sessionState = .completed
+    }
+
+    /// Pauses an active session when the user navigates to Home.
+    /// Stops the timer, audio, and hints without discarding any progress.
+    func pauseSession() {
+        guard sessionState == .active else { return }
+        startBufferWork?.cancel()
+        startBufferWork    = nil
+        isInStartBuffer    = false
+        startBufferMessage = nil
+        sessionTimer?.invalidate()
+        sessionTimer = nil
+        cancelHints()
+        VoiceManager.shared.stop()
+        sessionState = .paused
+    }
+
+    /// Resumes a paused session. Re-speaks the current instruction and
+    /// restarts the countdown from the remaining time.
+    func resumeSession() {
+        guard sessionState == .paused else { return }
+        sessionState = .active
+        speakLevelInstruction()
+        scheduleSessionTimer()
+    }
+
+    // MARK: - Gameplay
+
     func itemTapped(_ item: PlayItem) {
-        cancelHints()   // stop any pending hint the moment the user acts
-        guard phase == .playing, !isFeedbackActive, let step = currentStep else { return }
+        cancelHints()
+        guard phase == .playing, !isFeedbackActive,
+              !sessionEnded, let step = currentStep else { return }
+
+        totalTaps += 1
 
         if item.id == step.targetItemID {
+            correctTaps += 1
             correctItemID = item.id
-            VoiceManager.shared.stop()   // silence current instruction immediately on tap
+            VoiceManager.shared.stop()
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { [weak self] in
                 guard let self else { return }
                 self.currentStepIndex += 1
                 if self.currentStepIndex >= self.level.steps.count {
-                    // Level complete — keep tile highlighted, show success inline
                     let msg = FeedbackMessages.pick(from: FeedbackMessages.completion,
                                                    avoiding: self.lastCompletionMessage)
                     self.lastCompletionMessage = msg
-                    self.successMessage = msg
+                    self.successMessage  = msg
                     self.feedbackMessage = nil
-                    self.feedbackKind = .neutral
-                    self.phase = .success
-                    // Hold tile highlight for 0.6 s then clear
+                    self.feedbackKind    = .neutral
+                    self.phase           = .success
                     DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) { [weak self] in
                         self?.correctItemID = nil
                     }
@@ -80,13 +257,11 @@ final class GameViewModel: ObservableObject {
                         self.advanceLevel()
                     }
                 } else {
-                    // Mid-level correct step — clear highlight, show brief feedback,
-                    // then schedule a hint after 2 s of idle (Memory Mode: no auto-play).
                     self.correctItemID = nil
                     let msg = FeedbackMessages.pick(from: FeedbackMessages.correct,
                                                    avoiding: self.lastCorrectMessage)
                     self.lastCorrectMessage = msg
-                    self.feedbackKind = .success
+                    self.feedbackKind    = .success
                     self.feedbackMessage = msg
                     DispatchQueue.main.asyncAfter(deadline: .now() + 0.45) { [weak self] in
                         guard let self, self.phase == .playing else { return }
@@ -96,34 +271,33 @@ final class GameViewModel: ObservableObject {
                 }
             }
         } else {
-            // Spec 4.3 – red flash, message, reset after 0.8 s
             let msg = FeedbackMessages.pick(from: FeedbackMessages.error,
                                             avoiding: lastErrorMessage)
             lastErrorMessage = msg
-            feedbackKind = .neutral
+            feedbackKind     = .neutral
             feedbackMessage  = msg
-            phase = .error
-            errorItemID = item.id
+            phase            = .error
+            errorItemID      = item.id
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) { [weak self] in
                 guard let self else { return }
-                self.errorItemID = nil
+                self.errorItemID    = nil
                 self.feedbackMessage = nil
-                self.phase = .playing
-                self.scheduleHints()   // hints target currentStepIndex (unchanged)
+                self.phase          = .playing
+                self.scheduleHints()
             }
         }
     }
 
     func advanceLevel() {
+        levelsCompleted += 1
         if isLastLevel {
-            // Completed all levels — rotate to the next content set
-            currentSetIndex   = (currentSetIndex + 1) % ItemLibrary.allSets.count
-            themeLevels       = LevelData.levels(for: currentSet)
+            currentSetIndex = nextEnabledSetIndex(after: currentSetIndex)
+            themeLevels     = LevelData.levels(for: currentSet)
             currentLevelIndex = 0
+            recordVisit()
             let themeName = currentSet.theme.displayName
             restart()
-            // Brief theme name ("Animals", "Vehicles", "Shapes") in feedback area
-            feedbackKind = .neutral
+            feedbackKind    = .neutral
             feedbackMessage = themeName
             DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { [weak self] in
                 guard let self, self.feedbackMessage == themeName else { return }
@@ -138,20 +312,42 @@ final class GameViewModel: ObservableObject {
     func restart() {
         cancelHints()
         VoiceManager.shared.stop()
-        correctItemID = nil
-        errorItemID = nil
+        correctItemID  = nil
+        errorItemID    = nil
         feedbackMessage = nil
-        feedbackKind = .neutral
-        successMessage = nil
+        feedbackKind    = .neutral
+        successMessage  = nil
         currentStepIndex = 0
-        phase = .playing
-        speakLevelInstruction()   // armHints called inside
+        phase           = .playing
+        speakLevelInstruction()
     }
 
-    // MARK: - Progressive Hints (Memory Mode)
+    // MARK: - Theme helpers
 
-    /// Arms the hint system after a delay (called only at level start).
-    /// The arm work item is cancelled if the user taps before it fires.
+    private func firstEnabledSetIndex() -> Int {
+        let enabled = SessionStore.shared.enabledThemes
+        return ItemLibrary.allSets.indices.first {
+            enabled.contains(ItemLibrary.allSets[$0].theme)
+        } ?? 0
+    }
+
+    private func nextEnabledSetIndex(after current: Int) -> Int {
+        let count   = ItemLibrary.allSets.count
+        let enabled = SessionStore.shared.enabledThemes
+        for offset in 1...count {
+            let next = (current + offset) % count
+            if enabled.contains(ItemLibrary.allSets[next].theme) { return next }
+        }
+        return current  // all disabled — stay (UI guards against this)
+    }
+
+    private func recordVisit() {
+        let name = currentSet.theme.displayName
+        if !visitedSetNames.contains(name) { visitedSetNames.append(name) }
+    }
+
+    // MARK: - Progressive Hints
+
     private func armHints(afterDelay delay: TimeInterval) {
         hintArmWork?.cancel()
         let work = DispatchWorkItem { [weak self] in
@@ -162,12 +358,8 @@ final class GameViewModel: ObservableObject {
         DispatchQueue.main.asyncAfter(deadline: .now() + delay, execute: work)
     }
 
-    /// Schedules two escalating hints after the arm delay elapses.
-    /// Hint 1 (4 s): subtle visual highlight on target tile only.
-    /// Hint 2 (6 s): replay step audio; visual highlight stays until next tap.
     private func scheduleHints() {
         cancelHints()
-
         let w2 = DispatchWorkItem { [weak self] in
             guard let self, self.phase == .playing else { return }
             self.hintItemID = self.currentStep?.targetItemID
@@ -193,36 +385,29 @@ final class GameViewModel: ObservableObject {
 
     // MARK: - Bundled Audio
 
-    /// Plays setID_lXX_start.mp3 at level start; falls back to TTS if file is missing.
-    /// After playback starts, arms the progressive hint timers to fire only after
-    /// the audio finishes + a 2.5 s grace period (so the child has fair thinking time).
     private func speakLevelInstruction() {
         let fallback = instructionText(for: level)
         if let file = bundledStartFile(level: currentLevelIndex) {
+            print("[Audio] level start — set: \(audioPrefix(for: currentSetIndex) ?? "nil"), file: \(file)")
             VoiceManager.shared.playBundled(file: file, fallbackText: fallback)
         } else {
             VoiceManager.shared.speak(fallback)
         }
-        // Query duration immediately after playBundled so the player is initialised.
-        // Falls back to 3 s estimate when TTS is used (AVAudioPlayer not loaded).
         let audioDuration = VoiceManager.shared.currentAudioDuration
         let armDelay = (audioDuration > 0 ? audioDuration : 3.0) + 2.5
         armHints(afterDelay: armDelay)
     }
 
-    /// Plays setID_lXX_stepN.mp3 for the active step; falls back to TTS if file is missing.
     private func speakStepInstruction() {
         let fallback = currentStep?.instruction ?? ""
         if let file = bundledStepFile(level: currentLevelIndex, step: currentStepIndex) {
+            print("[Audio] step — set: \(audioPrefix(for: currentSetIndex) ?? "nil"), file: \(file)")
             VoiceManager.shared.playBundled(file: file, fallbackText: fallback)
         } else {
             VoiceManager.shared.speak(fallback)
         }
     }
 
-    /// Derives the full spoken instruction from LevelData — single source of truth.
-    /// Single step: "Tap the blue circle"
-    /// Multi-step:  "Tap the blue circle, then tap the red circle"
     private func instructionText(for level: MissionLevel) -> String {
         let steps = level.steps.map { $0.instruction }
         guard let first = steps.first else { return "" }
@@ -230,8 +415,6 @@ final class GameViewModel: ObservableObject {
         return first + rest.joined()
     }
 
-    /// Maps set index → globally unique audio file prefix.
-    /// Returns nil for sets with no bundled audio yet.
     private func audioPrefix(for setIndex: Int) -> String? {
         switch setIndex {
         case 0: return "shapes_a1"
@@ -241,13 +424,11 @@ final class GameViewModel: ObservableObject {
         }
     }
 
-    /// Returns e.g. "shapes_a1_l01_start" for the current set and level.
     private func bundledStartFile(level: Int) -> String? {
         guard let prefix = audioPrefix(for: currentSetIndex) else { return nil }
         return String(format: "%@_l%02d_start", prefix, level + 1)
     }
 
-    /// Returns e.g. "shapes_a1_l05_step2" for the current set, level, and step.
     private func bundledStepFile(level: Int, step: Int) -> String? {
         guard let prefix = audioPrefix(for: currentSetIndex) else { return nil }
         return String(format: "%@_l%02d_step%d", prefix, level + 1, step + 1)

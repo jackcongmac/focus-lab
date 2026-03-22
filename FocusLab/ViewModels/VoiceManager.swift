@@ -34,15 +34,21 @@ final class VoiceManager {
     }
 
     /// Plays a bundled MP3 by filename (without extension).
-    /// Falls back to TTS with `fallbackText` if the file is missing or fails to load.
+    /// Resources are copied flat into the bundle root by Xcode's build system
+    /// (PBXFileSystemSynchronizedRootGroup does NOT preserve subdirectories),
+    /// so no subdirectory argument is needed or correct here.
+    /// Falls back to TTS only when the file is genuinely absent from the bundle.
     func playBundled(file: String, fallbackText: String) {
         guard isEnabled else { return }
         stop()
-        if let url = Bundle.main.url(forResource: file, withExtension: "mp3"),
-           let player = try? AVAudioPlayer(contentsOf: url) {
+        let url = Bundle.main.url(forResource: file, withExtension: "mp3")
+        print("[Audio] requested: \(file).mp3 | bundle URL found: \(url != nil)")
+        if let url, let player = try? AVAudioPlayer(contentsOf: url) {
             audioPlayer = player
             audioPlayer?.play()
+            print("[Audio] ▶ playing bundled: \(file).mp3")
         } else {
+            print("[Audio] ⚠️ TTS fallback triggered — file not in bundle: \(file).mp3")
             speak(fallbackText)
         }
     }

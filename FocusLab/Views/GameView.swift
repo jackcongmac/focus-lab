@@ -1,7 +1,13 @@
 import SwiftUI
 
-struct GameView: View {
-    @StateObject private var vm = GameViewModel()
+/// Pure gameplay content view.
+///
+/// Receives an already-initialised GameViewModel from AppShell and renders
+/// the active training session. Has no knowledge of navigation, tab state,
+/// or modal presentation — those all live in AppShell.
+struct GameplayView: View {
+    @ObservedObject var vm: GameViewModel
+
     @AppStorage(VoiceManager.enabledKey) private var voiceEnabled = true
 
     private let columns = [
@@ -18,27 +24,21 @@ struct GameView: View {
                     .ignoresSafeArea()
 
                 VStack(spacing: 0) {
-                    // 1. Top bar — always tappable
                     topBar
                         .padding(.top, m.topPadding)
                         .padding(.bottom, m.topBarBottom)
 
-                    // 2–6. Play zone — hit-testing gated by phase
                     VStack(spacing: 0) {
-                        // 2. Step progress
                         stepProgress
                             .padding(.bottom, m.stepBottom)
 
-                        // 3. Instruction — primary focal point
                         instructionArea
                             .padding(.bottom, m.instructionBottom)
 
-                        // 4. Feedback — fixed height, never collapses
                         feedbackArea
                             .frame(height: m.feedbackHeight)
                             .padding(.bottom, m.feedbackBottom)
 
-                        // 5. Tile grid — main action anchor
                         LazyVGrid(columns: columns, spacing: 16) {
                             ForEach(Array(vm.level.items.enumerated()), id: \.offset) { _, item in
                                 PlayItemButton(
@@ -53,10 +53,9 @@ struct GameView: View {
                         .frame(maxWidth: m.gridMaxWidth)
                         .padding(.bottom, m.gridBottom)
 
-                        // 6. Level progress — bottom anchor
                         levelProgress
                     }
-                    .allowsHitTesting(vm.phase == .playing || vm.phase == .error)
+                    .allowsHitTesting(!vm.isInStartBuffer && (vm.phase == .playing || vm.phase == .error))
 
                     Spacer(minLength: 0)
                 }
@@ -68,25 +67,37 @@ struct GameView: View {
     // MARK: - Subviews
 
     private var topBar: some View {
-        ZStack(alignment: .trailing) {
-            Text("Focus Lab")
-                .font(.system(size: 24, weight: .bold, design: .rounded))
-                .foregroundColor(Color.indigo.opacity(0.85))
-                .frame(maxWidth: .infinity)
+        ZStack {
+            // Center: title + live countdown
+            VStack(spacing: 2) {
+                Text("Focus Lab")
+                    .font(.system(size: 24, weight: .bold, design: .rounded))
+                    .foregroundStyle(Color.indigo.opacity(0.85))
 
-            Button {
-                voiceEnabled.toggle()
-                if !voiceEnabled { VoiceManager.shared.stop() }
-            } label: {
-                Image(systemName: voiceEnabled ? "speaker.wave.2" : "speaker.slash")
-                    .font(.body)
-                    .foregroundStyle(Color.secondary.opacity(0.55))
+                Text(vm.timeRemainingText)
+                    .font(.system(size: 12, weight: .regular, design: .rounded))
+                    .foregroundStyle(Color.secondary.opacity(0.65))
+                    .monospacedDigit()
             }
-            .buttonStyle(.plain)
+            .frame(maxWidth: .infinity)
+
+            // Trailing: voice toggle
+            HStack {
+                Spacer()
+                Button {
+                    voiceEnabled.toggle()
+                    if !voiceEnabled { VoiceManager.shared.stop() }
+                } label: {
+                    Image(systemName: voiceEnabled ? "speaker.wave.2" : "speaker.slash")
+                        .font(.body)
+                        .foregroundStyle(Color.secondary.opacity(0.55))
+                }
+                .buttonStyle(.plain)
+            }
         }
     }
 
-    /// Dot step indicator — lighter and simpler than level progress dots
+    /// Dot step indicator — lighter and simpler than level progress capsules
     private var stepProgress: some View {
         HStack(spacing: 6) {
             ForEach(0 ..< vm.level.steps.count, id: \.self) { i in
@@ -105,19 +116,37 @@ struct GameView: View {
     }
 
     private var instructionArea: some View {
-        Text(vm.displayInstruction ?? " ")
-            .font(.title2)
-            .fontWeight(.semibold)
-            .multilineTextAlignment(.center)
-            .foregroundStyle(
-                vm.phase == .success
-                    ? Color(red: 0.22, green: 0.58, blue: 0.38).opacity(0.90)
-                    : Color.primary.opacity(0.80)
-            )
-            .opacity(vm.displayInstruction != nil ? 1 : 0)
-            .scaleEffect(vm.phase == .success ? 1.05 : 1.0)
-            .animation(.spring(response: 0.3, dampingFraction: 0.6), value: vm.phase == .success)
-            .fixedSize(horizontal: false, vertical: true)
+        // ZStack keeps a stable layout frame while instructions swap in and out.
+        // Each unique string gets its own identity via .id(), so every change —
+        // first appearance, step advance, success message, "Session Started" fade —
+        // triggers the same slide-up-and-fade transition.
+        ZStack {
+            // Invisible placeholder — keeps the ZStack height stable so the
+            // grid doesn't jump when the instruction appears or disappears.
+            Text(" ")
+                .font(.title)
+                .fontWeight(.semibold)
+                .opacity(0)
+
+            if let instruction = vm.displayInstruction {
+                Text(instruction)
+                    .font(.title)
+                    .fontWeight(.semibold)
+                    .multilineTextAlignment(.center)
+                    .foregroundStyle(
+                        vm.phase == .success
+                            ? Color(red: 0.22, green: 0.58, blue: 0.38).opacity(0.90)
+                            : Color.primary.opacity(0.80)
+                    )
+                    .fixedSize(horizontal: false, vertical: true)
+                    .id(instruction)
+                    .transition(.asymmetric(
+                        insertion: .opacity.combined(with: .offset(CGSize(width: 0, height: 8))),
+                        removal:   .opacity.combined(with: .offset(CGSize(width: 0, height: -4)))
+                    ))
+            }
+        }
+        .animation(.easeOut(duration: 0.3), value: vm.displayInstruction)
     }
 
     /// Fixed-height container prevents layout shifts when message appears / disappears
@@ -184,13 +213,13 @@ private struct LayoutMetrics {
     init(size: CGSize) {
         let isIPad = size.width >= 768
 
-        topPadding        = isIPad ? 60  : 52
-        topBarBottom      = isIPad ? 32  : 24   // ↑ pushes play zone down from title
-        stepBottom        = isIPad ? 20  : 14   // ↑ +4pt loosened
-        instructionBottom = isIPad ? 24  : 18   // ↑ +4pt loosened
+        topPadding        = isIPad ? 40  : 52
+        topBarBottom      = isIPad ? 18  : 24
+        stepBottom        = isIPad ? 12  : 14
+        instructionBottom = isIPad ? 16  : 18
         feedbackHeight    = 22
-        feedbackBottom    = isIPad ? 28  : 20   // ↑ +4pt loosened
-        gridBottom        = isIPad ? 32  : 22   // ↑ +4pt loosened
+        feedbackBottom    = isIPad ? 16  : 20
+        gridBottom        = isIPad ? 18  : 22
         gridMaxWidth      = isIPad ? 480 : 360
     }
 }

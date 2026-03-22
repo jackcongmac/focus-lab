@@ -60,9 +60,8 @@ struct PlayItemButton: View {
         .shadow(color: Color.green.opacity(feedback == .correct ? 0.35 : 0), radius: 12)
         .offset(x: shakeOffset)
         .animation(.spring(response: 0.25, dampingFraction: 0.55), value: feedback)
-        .onChange(of: feedback) { newVal in
+        .onChange(of: feedback) { _, newVal in
             if newVal == .correct {
-                // TODO: SoundManager.play(.correct)
                 UIImpactFeedbackGenerator(style: .light).impactOccurred()
                 withAnimation(.easeOut(duration: 0.08)) { flashOpacity = 0.13 }
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.08) {
@@ -77,7 +76,7 @@ struct PlayItemButton: View {
                 shakeOffset = 0
             }
         }
-        .onChange(of: isHinted) { hinted in
+        .onChange(of: isHinted) { _, hinted in
             if hinted {
                 withAnimation(.easeInOut(duration: 0.9).repeatForever(autoreverses: true)) {
                     hintPulse = true
